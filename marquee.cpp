@@ -9,6 +9,9 @@
 #include <thread>
 #include <sstream>
 
+//  To compile: g++ -std=c++20 marquee.cpp -o marqueeApp
+//  To run (in VSCode): .\marqueeApp
+
 //  Global variable
 std::atomic<bool> is_running{true};
 std::atomic<bool> animation{false};
