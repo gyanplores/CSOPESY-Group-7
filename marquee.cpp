@@ -56,7 +56,7 @@ void print_design(){                                                            
         if(animation){                                                                  //  Starts or stops the animation
             set_cursor(x, directX);
         }else{
-            set_cursor(0, 7);
+            set_cursor(x, 7);
         }
         std::cout << print_text;
 
