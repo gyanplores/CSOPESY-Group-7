@@ -4,13 +4,17 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <sstream>
 #include "CommandHandler.h"
+#include "Config.h"
+#include "Scheduler.h"
 
-class mainMenu {
+class MainMenu {
 private:
-    commandHandler cmdHandler;
+    CommandHandler cmdHandler;
     bool clearOnCommand;
-
+    Scheduler* scheduler;
+    SystemConfig config;
     
     void displayBanner(){
         std::cout << "  _____   _____   ____   _____  ______  _____  __     __" << std::endl;
@@ -49,7 +53,7 @@ private:
     }
 
 public:
-    mainMenu() : clearOnCommand(false) {}
+    MainMenu() : clearOnCommand(false) {}
 
     // Setup all commands
     void setupCommands() {
@@ -141,51 +145,56 @@ public:
 private:
     void handleInitialize() {
         std::cout << "\nInitializing system...\n";
-        // TODO: Load configuration from CONFIG.TXT
-        // TODO: Initialize scheduler
-        // TODO: Initialize memory manager
+        
+        config = ConfigLoader::loadFromFile("config.txt");
+        config.display();
+
+        scheduler = new Scheduler(config);
+        scheduler->start();
         
         std::cout << "Configuration loaded successfully.\n";
         std::cout << "Scheduler initialized.\n";
-        std::cout << "Memory manager initialized.\n";
+        //std::cout << "Memory manager initialized.\n";
         
         cmdHandler.setSystemInitialized(true);
         std::cout << "\nSystem initialization complete!\n\n";
     }
 
     void handleScreenList() {
-        std::cout << "\n=== Process List ===\n";
-        // TODO: Display all processes
-        std::cout << "Running Processes:\n";
-        std::cout << "  (None)\n";
-        std::cout << "\nReady Queue:\n";
-        std::cout << "  (Empty)\n";
-        std::cout << "\nFinished Processes:\n";
-        std::cout << "  (None)\n";
-        std::cout << "====================\n\n";
+        if (scheduler) {
+            scheduler->displayProcessLists();
+        } else {
+            std::cout << "ERROR: Scheduler not initialized.\n";
+        }
     }
 
     void handleSchedulerStart() {
-        std::cout << "\nStarting automatic process generation...\n";
-        // TODO: Start generating processes in background thread
-        std::cout << "Scheduler is now creating sample processes.\n\n";
+        if (scheduler) {
+            scheduler->startProcessGeneration();
+            std::cout << "\nAutomatic process generation started.\n";
+            std::cout << "Processes will be created every " << config.batchProcessFreq << " seconds.\n\n";
+        } else {
+            std::cout << "ERROR: Scheduler not initialized.\n";
+        }
     }
 
     void handleSchedulerStop() {
-        std::cout << "\nStopping automatic process generation...\n";
-        // TODO: Stop the background thread
-        std::cout << "Process generation stopped.\n\n";
+        if (scheduler) {
+            scheduler->stopProcessGeneration();
+            std::cout << "\nAutomatic process generation stopped.\n\n";
+        } else {
+            std::cout << "ERROR: Scheduler not initialized.\n";
+        }
     }
 
     void handleReportUtil() {
-        std::cout << "\n=== CPU Utilization Report ===\n";
-        // TODO: Calculate and display CPU statistics
-        std::cout << "CPU Usage: 0.00%\n";
-        std::cout << "Active Cores: 0/4\n";
-        std::cout << "Total Instructions Executed: 0\n";
-        std::cout << "==============================\n\n";
+        if (scheduler) {
+            scheduler->displayUtilizationReport();
+        } else {
+            std::cout << "ERROR: Scheduler not initialized.\n";
+        }
     }
-
+    
     void handleVMStat() {
         std::cout << "\n=== Virtual Memory Statistics ===\n";
         // TODO: Display memory statistics
@@ -193,7 +202,7 @@ private:
         std::cout << "Used Memory: 0 MB\n";
         std::cout << "Free Memory: 1024 MB\n";
         std::cout << "=================================\n\n";
-    }
+    } 
 
     void handleProcessSMI() {
         std::cout << "\n=== Process System Management Interface ===\n";
@@ -204,23 +213,54 @@ private:
 
     void handleExit() {
         std::cout << "\nShutting down OS Simulator...\n";
+        if (scheduler) {
+            scheduler->stop();
+        }
         std::cout << "Goodbye!\n";
         cmdHandler.stop();
     }
 
     // Handle commands with parameters
     bool handleSpecialCommands(const std::string& input) {
-        // TODO: Parse commands like "screen -r ProcessName"
-        // TODO: Parse commands like "screen -s ProcessName 100"
-        
-        // Example structure:
-        if (input.substr(0, 9) == "screen -r") {
-            std::cout << "Attaching to process screen...\n";
+        // Handle "screen -r ProcessName" - view specific process
+        if (input.find("screen -r ") == 0) {
+            std::string processName = input.substr(10);
+            if (scheduler) {
+                Process* p = scheduler->findProcess(processName);
+                if (p) {
+                    std::cout << "\n";
+                    p->displayInfo();
+                    std::cout << "\n";
+                } else {
+                    std::cout << "Process '" << processName << "' not found.\n";
+                }
+            }
             return true;
         }
         
-        if (input.substr(0, 9) == "screen -s") {
-            std::cout << "Creating new process...\n";
+        // Handle "screen -s ProcessName Instructions" - create custom process
+        if (input.find("screen -s ") == 0) {
+            std::istringstream iss(input.substr(10));
+            std::string name;
+            int instructions;
+            
+            if (iss >> name >> instructions) {
+                if (scheduler) {
+                    Process* newProcess = new Process(
+                        name,
+                        scheduler->getTotalProcesses(),
+                        instructions,
+                        "Manual"
+                    );
+                    scheduler->addProcess(newProcess);
+                    std::cout << "Created process: " << name << " with " 
+                              << instructions << " instructions.\n";
+                } else {
+                    std::cout << "ERROR: Scheduler not initialized.\n";
+                }
+            } else {
+                std::cout << "Usage: screen -s <name> <instructions>\n";
+            }
             return true;
         }
         
