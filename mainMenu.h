@@ -53,7 +53,14 @@ private:
     }
 
 public:
-    MainMenu() : clearOnCommand(false) {}
+    MainMenu() : clearOnCommand(false), scheduler(nullptr) {}
+    
+    ~MainMenu() {
+        if (scheduler) {
+            scheduler->stop();
+            delete scheduler;
+        }
+    }
 
     // Setup all commands
     void setupCommands() {
@@ -62,7 +69,7 @@ public:
             handleInitialize();
         });
 
-        // Screen-ls command
+        // Screen list command
         cmdHandler.registerCommand("screen-ls", [this]() {
             handleScreenList();
         });
@@ -77,19 +84,9 @@ public:
             handleSchedulerStop();
         });
 
-        // Report-util
+        // Report utilities command
         cmdHandler.registerCommand("report-util", [this]() {
             handleReportUtil();
-        });
-
-        // VMSTAT command
-        cmdHandler.registerCommand("vmstat", [this]() {
-            handleVMStat();
-        });
-
-        // Process SMI command
-        cmdHandler.registerCommand("process-smi", [this]() {
-            handleProcessSMI();
         });
 
         // Clear screen command
@@ -143,21 +140,21 @@ public:
     }
 
 private:
+    // ========== COMMAND HANDLERS ==========
+
     void handleInitialize() {
         std::cout << "\nInitializing system...\n";
         
+        // Load configuration from file
         config = ConfigLoader::loadFromFile("config.txt");
         config.display();
-
+        
+        // Create scheduler
         scheduler = new Scheduler(config);
         scheduler->start();
         
-        std::cout << "Configuration loaded successfully.\n";
-        std::cout << "Scheduler initialized.\n";
-        //std::cout << "Memory manager initialized.\n";
-        
         cmdHandler.setSystemInitialized(true);
-        std::cout << "\nSystem initialization complete!\n\n";
+        std::cout << "System initialization complete!\n\n";
     }
 
     void handleScreenList() {
@@ -194,22 +191,6 @@ private:
             std::cout << "ERROR: Scheduler not initialized.\n";
         }
     }
-    
-    void handleVMStat() {
-        std::cout << "\n=== Virtual Memory Statistics ===\n";
-        // TODO: Display memory statistics
-        std::cout << "Total Memory: 1024 MB\n";
-        std::cout << "Used Memory: 0 MB\n";
-        std::cout << "Free Memory: 1024 MB\n";
-        std::cout << "=================================\n\n";
-    } 
-
-    void handleProcessSMI() {
-        std::cout << "\n=== Process System Management Interface ===\n";
-        // TODO: Display detailed process information
-        std::cout << "No processes currently running.\n";
-        std::cout << "===========================================\n\n";
-    }
 
     void handleExit() {
         std::cout << "\nShutting down OS Simulator...\n";
@@ -228,8 +209,42 @@ private:
             if (scheduler) {
                 Process* p = scheduler->findProcess(processName);
                 if (p) {
-                    std::cout << "\n";
-                    p->displayInfo();
+                    // Clear screen
+                    clearScreen();
+                    
+                    // Display process info and logs
+                    std::cout << "Process name: " << p->getName() << "\n";
+                    std::cout << "ID: " << p->getID() << "\n";
+                    std::cout << "Logs:\n";
+                    
+                    // Read and display the log file
+                    std::string logPath = p->getLogFilePath();
+                    if (!logPath.empty()) {
+                        std::ifstream logFile(logPath);
+                        if (logFile.is_open()) {
+                            std::string line;
+                            bool skipHeader = true;
+                            while (std::getline(logFile, line)) {
+                                // Skip the first two lines (Process name and "Logs:" header)
+                                if (skipHeader) {
+                                    if (line.find("Logs:") != std::string::npos) {
+                                        skipHeader = false;
+                                    }
+                                    continue;
+                                }
+                                std::cout << line << "\n";
+                            }
+                            logFile.close();
+                        } else {
+                            std::cout << "(No logs available yet)\n";
+                        }
+                    } else {
+                        std::cout << "(Log file not initialized)\n";
+                    }
+                    
+                    // Display current status
+                    std::cout << "\nCurrent instruction line: " << p->getInstructionsExecuted() << "\n";
+                    std::cout << "Lines of code: " << p->getTotalInstructions() << "\n";
                     std::cout << "\n";
                 } else {
                     std::cout << "Process '" << processName << "' not found.\n";
@@ -252,6 +267,10 @@ private:
                         instructions,
                         "Manual"
                     );
+                    
+                    // Initialize log file
+                    scheduler->initializeProcessLogPublic(newProcess);
+                    
                     scheduler->addProcess(newProcess);
                     std::cout << "Created process: " << name << " with " 
                               << instructions << " instructions.\n";
@@ -268,4 +287,4 @@ private:
     }
 };
 
-#endif
+#endif // MAIN_MENU_H

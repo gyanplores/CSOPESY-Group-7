@@ -36,6 +36,8 @@ private:
     // Core assignment (for multi-core simulation)
     int assignedCore;
 
+    std::string logFilePath;
+
 public:
     // Constructor
     Process(std::string name, int id, int instructions, std::string arrival)
@@ -48,7 +50,9 @@ public:
           arrivalTime(arrival),
           startTime(""),
           finishTime(""),
-          assignedCore(-1) {}
+          assignedCore(-1),
+          logFilePath("") {}
+
 
     // Getters
     std::string getName() const { return processName; }
@@ -61,12 +65,26 @@ public:
     std::string getStartTime() const { return startTime; }
     std::string getFinishTime() const { return finishTime; }
     int getAssignedCore() const { return assignedCore; }
+    std::string getLogFilePath() const { return logFilePath; }
 
     // Setters
     void setState(ProcessState newState) { currentState = newState; }
     void setStartTime(std::string time) { startTime = time; }
     void setFinishTime(std::string time) { finishTime = time; }
     void setAssignedCore(int core) { assignedCore = core; }
+    void setLogFilePath(std::string path) { logFilePath = path; }
+
+    // Write a log entry to the process's log file
+    void writeLog(const std::string& timestamp, int coreID, const std::string& message) {
+        if (logFilePath.empty()) return;
+        
+        std::ofstream logFile(logFilePath, std::ios::app);
+        if (logFile.is_open()) {
+            logFile << "(" << timestamp << ") Core:" << coreID 
+                    << " \"" << message << "\"\n";
+            logFile.close();
+        }
+    }
 
     // Execute one instruction
     void executeInstruction() {

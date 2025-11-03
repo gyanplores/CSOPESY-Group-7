@@ -8,6 +8,10 @@
 #include <atomic>
 #include <chrono>
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "Process.h"
 #include "Config.h"
 
@@ -261,6 +265,11 @@ public:
         return nullptr;
     }
 
+    // Public method to initialize process log (for manually created processes)
+    void initializeProcessLogPublic(Process* process) {
+        initializeProcessLog(process);
+    }
+
 private:
     // Count active CPU cores
     int countActiveCores() const {
@@ -269,6 +278,64 @@ private:
             if (!core->idle()) count++;
         }
         return count;
+    }
+
+    // Create directory if it doesn't exist
+    void createDirectoryIfNotExists(const std::string& path) {
+        /*
+        struct stat info;
+        if (stat(path.c_str(), &info) != 0) {
+            // Directory doesn't exist, create it
+            #ifdef _WIN32
+                _mkdir(path.c_str());
+            #else
+                mkdir(path.c_str(), 0777);
+            #endif
+        }
+        */
+    }
+
+    // Get formatted timestamp (MM/DD/YYYY, HH:MM:SS AM/PM)
+    std::string getFormattedTimestamp() {
+        auto now = std::chrono::system_clock::now();
+        std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+        std::tm* local_time = std::localtime(&now_time);
+        
+        std::ostringstream oss;
+        // Format: MM/DD/YYYY, HH:MM:SS AM/PM
+        oss << std::setfill('0') << std::setw(2) << (local_time->tm_mon + 1) << "/"
+            << std::setfill('0') << std::setw(2) << local_time->tm_mday << "/"
+            << (local_time->tm_year + 1900) << ", ";
+        
+        int hour = local_time->tm_hour;
+        bool isPM = hour >= 12;
+        if (hour == 0) hour = 12;
+        else if (hour > 12) hour -= 12;
+        
+        oss << std::setfill('0') << std::setw(2) << hour << ":"
+            << std::setfill('0') << std::setw(2) << local_time->tm_min << ":"
+            << std::setfill('0') << std::setw(2) << local_time->tm_sec
+            << (isPM ? " PM" : " AM");
+        
+        return oss.str();
+    }
+
+    // Initialize process log file
+    void initializeProcessLog(Process* process) {
+        // Create logs directory
+        createDirectoryIfNotExists("logs");
+        
+        // Set log file path
+        std::string logPath = "logs/" + process->getName() + ".txt";
+        process->setLogFilePath(logPath);
+        
+        // Create/clear the log file
+        std::ofstream logFile(logPath);
+        if (logFile.is_open()) {
+            logFile << "Process: " << process->getName() << "\n";
+            logFile << "Logs:\n";
+            logFile.close();
+        }
     }
 
     // Main CPU execution loop
@@ -282,6 +349,15 @@ private:
             // Execute one cycle on all cores
             for (auto core : cpuCores) {
                 if (!core->idle()) {
+                    Process* p = core->getProcess();
+                    
+                    // Write log entry for this instruction
+                    if (p) {
+                        std::string timestamp = getFormattedTimestamp();
+                        std::string message = "Hello world from " + p->getName() + "!";
+                        p->writeLog(timestamp, core->getID(), message);
+                    }
+                    
                     core->executeCycle();
                     
                     // Check if process finished
@@ -396,10 +472,13 @@ private:
                 getCurrentTimeString()
             );
             
+            // Initialize log file for this process
+            initializeProcessLog(newProcess);
+            
             totalProcessesCreated++;
             addProcess(newProcess);
             
-            std::cout << "Created: " << name << " (" << instructions << " instructions)\n";
+            // Removed console output - logs go to file instead
         }
     }
 
