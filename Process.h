@@ -8,10 +8,7 @@
 #include <ctime>
 #include <cstdlib>
 
-/**
- * Process - Represents a single process in the system
- * Simplified version without memory management
- */
+// Process - Represents a single process in the system
 class Process {
 public:
     enum ProcessState {

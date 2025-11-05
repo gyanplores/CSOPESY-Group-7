@@ -6,9 +6,7 @@
 #include <sstream>
 #include <iostream>
 
-/**
- * Configuration structure for the OS Simulator
- */
+// Configuration structure for the OS Simulator
 struct SystemConfig {
     // CPU Configuration
     int numCPUs;
@@ -37,19 +35,22 @@ struct SystemConfig {
     void display() const {
         std::cout << "\n=== System Configuration ===\n";
         std::cout << "Number of CPUs: " << numCPUs << "\n";
-        std::cout << "CPU Cycle Time: 100 ms (fixed)\n";
+        //std::cout << "CPU Cycle Time: 100 ms (fixed)\n";
         std::cout << "Scheduler Type: " << schedulerType << "\n";
         std::cout << "Quantum Cycles: " << quantumCycles << "\n";
         std::cout << "Batch Process Frequency: " << batchProcessFreq << "\n";
         std::cout << "Min Instructions: " << minInstructions << "\n";
         std::cout << "Max Instructions: " << maxInstructions << "\n";
-        std::cout << "Delay per Exec: " << delayPerExec << " cycles";
+        std::cout << "Delay per Exec: " << delayPerExec << " cycles\n";
+        std::cout << "\n============================\n\n";
+        /*
         if (delayPerExec == 0) {
             std::cout << " (1 instruction per cycle)";
         } else {
             std::cout << " (busy-wait " << delayPerExec << " cycles per instruction)";
         }
         std::cout << "\n============================\n\n";
+        */
     }
 
     // Validate configuration
@@ -88,9 +89,8 @@ struct SystemConfig {
     }
 };
 
-/**
- * ConfigLoader - Reads configuration from file
- */
+// ConfigLoader - Reads configuration from file
+ 
 class ConfigLoader {
 public:
     static SystemConfig loadFromFile(const std::string& filename) {

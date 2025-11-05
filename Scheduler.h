@@ -14,9 +14,7 @@
 #include "Process.h"
 #include "Config.h"
 
-/**
- * CPU Core - Represents a single CPU core
- */
+// CPU Core - Represents a single CPU core
 class CPUCore {
 private:
     int coreID;
@@ -288,6 +286,23 @@ public:
     void initializeProcessLogPublic(Process* process) {
         initializeProcessLog(process);
     }
+    
+    // Get running processes (for report)
+    std::vector<Process*> getRunningProcesses() const {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(runningMutex));
+        return runningProcesses;
+    }
+    
+    // Get finished processes (for report)
+    std::vector<Process*> getFinishedProcesses() const {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(finishedMutex));
+        return finishedProcesses;
+    }
+    
+    // Get active core count (for report)
+    int countActiveCoresPublic() const {
+        return countActiveCores();
+    }
 
 private:
     // Count active CPU cores
@@ -508,8 +523,6 @@ private:
             
             totalProcessesCreated++;
             addProcess(newProcess);
-            
-            // Removed console output - logs go to file instead
         }
     }
 

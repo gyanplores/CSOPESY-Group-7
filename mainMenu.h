@@ -193,7 +193,63 @@ private:
 
     void handleReportUtil() {
         if (scheduler) {
-            scheduler->displayUtilizationReport();
+            // Generate filename with timestamp
+            std::string filename = "csopesy-log.txt";
+            
+            std::ofstream reportFile(filename);
+            if (!reportFile.is_open()) {
+                std::cout << "ERROR: Could not create report file.\n";
+                return;
+            }
+            
+            // Get current time for report header
+            auto now = std::chrono::system_clock::now();
+            std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+            std::string timestamp = std::ctime(&now_time);
+            timestamp.pop_back(); // Remove newline
+            
+            // Write report header
+            reportFile << "Report generated at: " << timestamp << "\n\n";
+            
+            // Write CPU utilization
+            reportFile << "CPU Utilization: " << scheduler->getCPUUtilization() << "%\n";
+            reportFile << "Cores used: " << scheduler->countActiveCoresPublic() << "/" << config.numCPUs << "\n";
+            reportFile << "Cores available: " << (config.numCPUs - scheduler->countActiveCoresPublic()) << "/" << config.numCPUs << "\n\n";
+            
+            reportFile << "--------------------------------------\n\n";
+            
+            // Write running processes
+            reportFile << "Running processes:\n";
+            auto runningProcs = scheduler->getRunningProcesses();
+            if (runningProcs.empty()) {
+                reportFile << "(None)\n";
+            } else {
+                for (auto p : runningProcs) {
+                    reportFile << p->getName() << " (" << p->getArrivalTime() << ")  Core: " 
+                               << p->getAssignedCore() << "  " 
+                               << p->getInstructionsExecuted() << "/" << p->getTotalInstructions() << "\n";
+                }
+            }
+            reportFile << "\n";
+            
+            // Write finished processes
+            reportFile << "Finished processes:\n";
+            auto finishedProcs = scheduler->getFinishedProcesses();
+            if (finishedProcs.empty()) {
+                reportFile << "(None)\n";
+            } else {
+                for (auto p : finishedProcs) {
+                    reportFile << p->getName() << " (" << p->getArrivalTime() << ")  Finished  " 
+                               << p->getInstructionsExecuted() << "/" << p->getTotalInstructions() << "\n";
+                }
+            }
+            reportFile << "\n";
+            
+            reportFile << "--------------------------------------\n";
+            
+            reportFile.close();
+            
+            std::cout << "Report generated: " << filename << "\n";
         } else {
             std::cout << "ERROR: Scheduler not initialized.\n";
         }
@@ -206,6 +262,88 @@ private:
         }
         std::cout << "Goodbye!\n";
         cmdHandler.stop();
+    }
+
+    // Enter interactive process screen
+    void enterProcessScreen(const std::string& processName) {
+        clearScreen();
+        
+        // Process screen loop
+        bool inProcessScreen = true;
+        while (inProcessScreen) {
+            std::string command;
+            std::cout << "root: ";
+            std::getline(std::cin, command);
+            
+            if (command == "process-smi") {
+                displayProcessSMI(processName);
+            }
+            else if (command == "exit") {
+                inProcessScreen = false;
+                clearScreen();
+                displayBanner();
+            }
+            else if (command.empty()) {
+                // Ignore empty input
+                continue;
+            }
+            else {
+                std::cout << "Unknown command. Available commands: process-smi, exit\n";
+            }
+        }
+    }
+    
+    // Display process SMI (System Management Interface)
+    void displayProcessSMI(const std::string& processName) {
+        if (!scheduler) {
+            std::cout << "ERROR: Scheduler not initialized.\n";
+            return;
+        }
+        
+        Process* p = scheduler->findProcess(processName);
+        if (!p) {
+            std::cout << "Process '" << processName << "' not found.\n";
+            return;
+        }
+        
+        // Display process info
+        std::cout << "\nProcess: " << p->getName();
+        if (p->isFinished()) {
+            std::cout << " (Finished!)";
+        }
+        std::cout << "\n";
+        std::cout << "ID: " << p->getID() << "\n";
+        
+        // Display current instruction line and total
+        std::cout << "\nCurrent instruction line: " << p->getInstructionsExecuted() << "\n";
+        std::cout << "Lines of code: " << p->getTotalInstructions() << "\n";
+        
+        // Display logs
+        std::cout << "\nLogs:\n";
+        std::string logPath = p->getLogFilePath();
+        if (!logPath.empty()) {
+            std::ifstream logFile(logPath);
+            if (logFile.is_open()) {
+                std::string line;
+                bool skipHeader = true;
+                while (std::getline(logFile, line)) {
+                    // Skip the first two lines (Process name and "Logs:" header)
+                    if (skipHeader) {
+                        if (line.find("Logs:") != std::string::npos) {
+                            skipHeader = false;
+                        }
+                        continue;
+                    }
+                    std::cout << line << "\n";
+                }
+                logFile.close();
+            } else {
+                std::cout << "(No logs available yet)\n";
+            }
+        } else {
+            std::cout << "(Log file not initialized)\n";
+        }
+        std::cout << "\n";
     }
 
     // Handle commands with parameters
@@ -260,35 +398,44 @@ private:
             return true;
         }
         
-        // Handle "screen -s ProcessName Instructions" - create custom process
+        
+        // Handle "screen -s ProcessName" - create process and enter its screen
         if (input.find("screen -s ") == 0) {
-            std::istringstream iss(input.substr(10));
-            std::string name;
-            int instructions;
+            std::string name = input.substr(10);
             
-            if (iss >> name >> instructions) {
-                if (scheduler) {
-                    Process* newProcess = new Process(
-                        name,
-                        scheduler->getTotalProcesses(),
-                        instructions,
-                        "Manual"
-                    );
-                    
-                    // Generate instructions (VAR, PRINT, ADD pattern)
-                    newProcess->generateInstructions(instructions);
-                    
-                    // Initialize log file
-                    scheduler->initializeProcessLogPublic(newProcess);
-                    
-                    scheduler->addProcess(newProcess);
-                    std::cout << "Created process: " << name << " with " 
-                              << instructions << " instructions.\n";
-                } else {
-                    std::cout << "ERROR: Scheduler not initialized.\n";
-                }
+            // Trim whitespace
+            while (!name.empty() && name[0] == ' ') name = name.substr(1);
+            while (!name.empty() && name[name.length()-1] == ' ') name = name.substr(0, name.length()-1);
+            
+            if (name.empty()) {
+                std::cout << "Usage: screen -s <processname>\n";
+                return true;
+            }
+            
+            if (scheduler) {
+                // Generate random instruction count
+                int instructions = config.minInstructions + 
+                    (rand() % (config.maxInstructions - config.minInstructions + 1));
+                
+                Process* newProcess = new Process(
+                    name,
+                    scheduler->getTotalProcesses(),
+                    instructions,
+                    "Manual"
+                );
+                
+                // Generate instructions (VAR, PRINT, ADD pattern)
+                newProcess->generateInstructions(instructions);
+                
+                // Initialize log file
+                scheduler->initializeProcessLogPublic(newProcess);
+                
+                scheduler->addProcess(newProcess);
+                
+                // Enter the process screen
+                enterProcessScreen(name);
             } else {
-                std::cout << "Usage: screen -s <name> <instructions>\n";
+                std::cout << "ERROR: Scheduler not initialized.\n";
             }
             return true;
         }
