@@ -10,8 +10,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <cstdlib>
 #include "Process.h"
 #include "Config.h"
 
@@ -280,19 +279,13 @@ private:
         return count;
     }
 
-    // Create directory if it doesn't exist
+    // Create directory if it doesn't exist (cross-platform using system command)
     void createDirectoryIfNotExists(const std::string& path) {
-        /*
-        struct stat info;
-        if (stat(path.c_str(), &info) != 0) {
-            // Directory doesn't exist, create it
-            #ifdef _WIN32
-                _mkdir(path.c_str());
-            #else
-                mkdir(path.c_str(), 0777);
-            #endif
-        }
-        */
+        #ifdef _WIN32
+            system("if not exist logs mkdir logs");
+        #else
+            system("mkdir -p logs");
+        #endif
     }
 
     // Get formatted timestamp (MM/DD/YYYY, HH:MM:SS AM/PM)
@@ -351,14 +344,24 @@ private:
                 if (!core->idle()) {
                     Process* p = core->getProcess();
                     
-                    // Write log entry for this instruction
                     if (p) {
+                        // Get the current instruction before executing
+                        std::string instruction = p->getCurrentInstruction();
+                        
+                        // Execute the instruction (updates registers)
+                        core->executeCycle();
+                        
+                        // Write log entry with actual instruction and current X value
                         std::string timestamp = getFormattedTimestamp();
-                        std::string message = "Hello world from " + p->getName() + "!";
-                        p->writeLog(timestamp, core->getID(), message);
+                        std::string logMessage = instruction;
+                        
+                        // For ADD and VAR, show the result/value of X
+                        if (instruction.find("ADD") == 0 || instruction.find("VAR") == 0) {
+                            logMessage += " | X = " + std::to_string(p->getRegisterA());
+                        }
+                        
+                        p->writeLog(timestamp, core->getID(), logMessage);
                     }
-                    
-                    core->executeCycle();
                     
                     // Check if process finished
                     if (core->processFinished()) {
@@ -372,8 +375,10 @@ private:
                 }
             }
             
-            // Delay between cycles
-            std::this_thread::sleep_for(std::chrono::milliseconds(config.delayPerExec));
+            // Delay between cycles (if delay is 0, executes as fast as possible)
+            if (config.delayPerExec > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(config.delayPerExec));
+            }
         }
     }
 
@@ -471,6 +476,9 @@ private:
                 instructions,
                 getCurrentTimeString()
             );
+            
+            // Generate instructions (VAR, PRINT, ADD pattern)
+            newProcess->generateInstructions(instructions);
             
             // Initialize log file for this process
             initializeProcessLog(newProcess);

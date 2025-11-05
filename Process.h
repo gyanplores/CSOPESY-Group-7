@@ -3,7 +3,10 @@
 
 #include <string>
 #include <iostream>
+#include <fstream>
+#include <vector>
 #include <ctime>
+#include <cstdlib>
 
 /**
  * Process - Represents a single process in the system
@@ -28,6 +31,14 @@ private:
     int instructionsExecuted;
     int remainingInstructions;
     
+    // Instruction list (actual commands to execute)
+    std::vector<std::string> instructions;
+    
+    // Process variables (for computation)
+    int registerA;
+    int registerB;
+    int result;
+    
     // Timing information
     std::string arrivalTime;
     std::string startTime;
@@ -35,24 +46,29 @@ private:
     
     // Core assignment (for multi-core simulation)
     int assignedCore;
-
+    
+    // Logging
     std::string logFilePath;
 
 public:
     // Constructor
-    Process(std::string name, int id, int instructions, std::string arrival)
+    Process(std::string name, int id, int instructionCount, std::string arrival)
         : processName(name), 
           processID(id),
           currentState(READY),
-          totalInstructions(instructions),
+          totalInstructions(instructionCount),
           instructionsExecuted(0),
-          remainingInstructions(instructions),
+          remainingInstructions(instructionCount),
+          registerA(0),
+          registerB(0),
+          result(0),
           arrivalTime(arrival),
           startTime(""),
           finishTime(""),
           assignedCore(-1),
-          logFilePath("") {}
-
+          logFilePath("") {
+        // Instructions will be generated separately
+    }
 
     // Getters
     std::string getName() const { return processName; }
@@ -86,13 +102,65 @@ public:
         }
     }
 
+    // Get current instruction (without executing)
+    std::string getCurrentInstruction() const {
+        if (instructionsExecuted < instructions.size()) {
+            return instructions[instructionsExecuted];
+        }
+        return "";
+    }
+
     // Execute one instruction
     void executeInstruction() {
-        if (remainingInstructions > 0) {
+        if (remainingInstructions > 0 && instructionsExecuted < instructions.size()) {
+            std::string instruction = instructions[instructionsExecuted];
+            
+            // Parse and execute the instruction
+            if (instruction.find("VAR") == 0) {
+                // VAR X = value
+                size_t equalPos = instruction.find('=');
+                if (equalPos != std::string::npos) {
+                    registerA = std::stoi(instruction.substr(equalPos + 1));
+                }
+            }
+            else if (instruction.find("ADD") == 0) {
+                // ADD value
+                size_t spacePos = instruction.find(' ');
+                if (spacePos != std::string::npos) {
+                    int valueToAdd = std::stoi(instruction.substr(spacePos + 1));
+                    registerA += valueToAdd;
+                }
+            }
+            // PRINT doesn't need execution logic, just logged
+            
             instructionsExecuted++;
             remainingInstructions--;
         }
     }
+
+    // Generate instructions for this process
+    void generateInstructions(int count) {
+        instructions.clear();
+        
+        // First instruction: VAR X = <random>
+        int initialValue = rand() % 100 + 1;  // Random 1-100
+        instructions.push_back("VAR X = " + std::to_string(initialValue));
+        
+        // Alternate between PRINT and ADD for remaining instructions
+        for (int i = 1; i < count; i++) {
+            if (i % 2 == 1) {
+                // Odd positions: PRINT
+                instructions.push_back("PRINT \"Hello world from " + processName + "!\"");
+            } else {
+                // Even positions: ADD
+                int valueToAdd = rand() % 20 + 1;  // Random 1-20
+                instructions.push_back("ADD " + std::to_string(valueToAdd));
+            }
+        }
+    }
+
+    // Get current value of X
+    int getRegisterA() const { return registerA; }
 
     // Check if process is complete
     bool isFinished() const {

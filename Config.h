@@ -42,8 +42,47 @@ struct SystemConfig {
         std::cout << "Batch Process Frequency: " << batchProcessFreq << "\n";
         std::cout << "Min Instructions: " << minInstructions << "\n";
         std::cout << "Max Instructions: " << maxInstructions << "\n";
-        std::cout << "Delay per Execution: " << delayPerExec << " ms\n";
+        if (delayPerExec == 0) {
+            std::cout << "Delay per Execution: 0 ms (1 instruction per CPU cycle)\n";
+        } else {
+            std::cout << "Delay per Execution: " << delayPerExec << " ms\n";
+        }
         std::cout << "============================\n\n";
+    }
+
+    // Validate configuration
+    bool isValid() const {
+        bool valid = true;
+        
+        // Validate scheduler type
+        if (schedulerType != "fcfs" && schedulerType != "rr") {
+            std::cerr << "ERROR: Invalid scheduler type '" << schedulerType << "'\n";
+            std::cerr << "       Must be 'fcfs' or 'rr'\n";
+            valid = false;
+        }
+        
+        // Validate number of CPUs
+        if (numCPUs < 1 || numCPUs > 128) {
+            std::cerr << "ERROR: Invalid number of CPUs (" << numCPUs << ")\n";
+            std::cerr << "       Must be between 1 and 128\n";
+            valid = false;
+        }
+        
+        // Validate quantum cycles (for RR)
+        if (schedulerType == "rr" && quantumCycles < 1) {
+            std::cerr << "ERROR: Invalid quantum cycles (" << quantumCycles << ")\n";
+            std::cerr << "       Must be at least 1 for Round Robin\n";
+            valid = false;
+        }
+        
+        // Validate instruction range
+        if (minInstructions < 1 || maxInstructions < minInstructions) {
+            std::cerr << "ERROR: Invalid instruction range\n";
+            std::cerr << "       Min: " << minInstructions << ", Max: " << maxInstructions << "\n";
+            valid = false;
+        }
+        
+        return valid;
     }
 };
 
@@ -88,7 +127,12 @@ private:
             config.numCPUs = std::stoi(value);
         }
         else if (key == "scheduler" || key == "scheduler-type") {
-            config.schedulerType = value;
+            // Convert to lowercase for comparison
+            std::string lowerValue = value;
+            for (char& c : lowerValue) {
+                c = std::tolower(c);
+            }
+            config.schedulerType = lowerValue;
         }
         else if (key == "quantum-cycles" || key == "quantum_cycles") {
             config.quantumCycles = std::stoi(value);

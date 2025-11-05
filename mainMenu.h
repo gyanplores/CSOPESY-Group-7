@@ -48,7 +48,6 @@ private:
                 cmd == "scheduler-start" || 
                 cmd == "scheduler-stop" ||
                 cmd == "report-util" ||
-                cmd == "vmstat" ||
                 cmd == "process-smi");
     }
 
@@ -147,6 +146,14 @@ private:
         
         // Load configuration from file
         config = ConfigLoader::loadFromFile("config.txt");
+        
+        // Validate configuration
+        if (!config.isValid()) {
+            std::cout << "\nInitialization FAILED due to invalid configuration.\n";
+            std::cout << "Please fix the errors in config.txt and try again.\n\n";
+            return;
+        }
+        
         config.display();
         
         // Create scheduler
@@ -267,6 +274,9 @@ private:
                         instructions,
                         "Manual"
                     );
+                    
+                    // Generate instructions (VAR, PRINT, ADD pattern)
+                    newProcess->generateInstructions(instructions);
                     
                     // Initialize log file
                     scheduler->initializeProcessLogPublic(newProcess);
