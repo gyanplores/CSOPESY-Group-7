@@ -4,7 +4,8 @@ Flores, Giancarlo A. |
 Francisco, Jacob Angelo N.
 
 Main File: 
+main.cpp
 
 How to start:
-1. g++ marquee.cpp -o marqueeApp (or any other name)
+1. g++ main.cpp -o main (or any other name)
 2. run the .exe file 
