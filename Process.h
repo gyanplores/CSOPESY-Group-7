@@ -140,17 +140,17 @@ public:
         instructions.clear();
         
         // First instruction: VAR X = <random>
-        int initialValue = rand() % 100 + 1;  // Random 1-100
+        int initialValue = 0;  // initialize to 0
         instructions.push_back("VAR X = " + std::to_string(initialValue));
         
         // Alternate between PRINT and ADD for remaining instructions
         for (int i = 1; i < count; i++) {
             if (i % 2 == 1) {
                 // Odd positions: PRINT
-                instructions.push_back("PRINT \"Hello world from " + processName + "!\"");
+                instructions.push_back("PRINT \"Value from " + processName + "!\"");
             } else {
                 // Even positions: ADD
-                int valueToAdd = rand() % 20 + 1;  // Random 1-20
+                int valueToAdd = rand() % 10 + 1;  // Random 1-10
                 instructions.push_back("ADD " + std::to_string(valueToAdd));
             }
         }
