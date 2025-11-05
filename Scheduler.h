@@ -23,19 +23,22 @@ private:
     Process* currentProcess;
     bool isIdle;
     int executedCycles;
+    int delayCyclesRemaining;  // For busy-waiting
 
 public:
-    CPUCore(int id) : coreID(id), currentProcess(nullptr), isIdle(true), executedCycles(0) {}
+    CPUCore(int id) : coreID(id), currentProcess(nullptr), isIdle(true), executedCycles(0), delayCyclesRemaining(0) {}
 
     bool idle() const { return isIdle; }
     int getID() const { return coreID; }
     Process* getProcess() const { return currentProcess; }
     int getExecutedCycles() const { return executedCycles; }
+    int getDelayCyclesRemaining() const { return delayCyclesRemaining; }
 
     void assignProcess(Process* p) {
         currentProcess = p;
         isIdle = false;
         executedCycles = 0;
+        delayCyclesRemaining = 0;
         if (p) {
             p->setAssignedCore(coreID);
             p->setState(Process::RUNNING);
@@ -49,17 +52,34 @@ public:
         currentProcess = nullptr;
         isIdle = true;
         executedCycles = 0;
+        delayCyclesRemaining = 0;
     }
 
-    void executeCycle() {
+    // Execute one cycle (either busy-waiting or actual instruction)
+    void executeCycle(int delayPerExec) {
         if (currentProcess && !isIdle) {
-            currentProcess->executeInstruction();
-            executedCycles++;
+            if (delayCyclesRemaining > 0) {
+                // Busy-waiting - process stays in CPU but doesn't execute instruction
+                delayCyclesRemaining--;
+            } else {
+                // Execute the actual instruction
+                currentProcess->executeInstruction();
+                executedCycles++;
+                
+                // Set up delay cycles for next instruction (if any)
+                if (!currentProcess->isFinished() && delayPerExec > 0) {
+                    delayCyclesRemaining = delayPerExec;
+                }
+            }
         }
     }
 
     bool processFinished() const {
         return currentProcess && currentProcess->isFinished();
+    }
+    
+    bool isBusyWaiting() const {
+        return delayCyclesRemaining > 0;
     }
 };
 
@@ -344,23 +364,28 @@ private:
                 if (!core->idle()) {
                     Process* p = core->getProcess();
                     
-                    if (p) {
-                        // Get the current instruction before executing
+                    if (p && !core->isBusyWaiting()) {
+                        // Only log when actually executing an instruction (not busy-waiting)
                         std::string instruction = p->getCurrentInstruction();
                         
-                        // Execute the instruction (updates registers)
-                        core->executeCycle();
+                        // Execute the instruction (updates registers) with delay
+                        core->executeCycle(config.delayPerExec);
                         
-                        // Write log entry with actual instruction and current X value
-                        std::string timestamp = getFormattedTimestamp();
-                        std::string logMessage = instruction;
-                        
-                        // For ADD and VAR, show the result/value of X
-                        if (instruction.find("ADD") == 0 || instruction.find("VAR") == 0) {
-                            logMessage += " | X = " + std::to_string(p->getRegisterA());
+                        // Write log entry only for actual instruction execution
+                        if (!instruction.empty()) {
+                            std::string timestamp = getFormattedTimestamp();
+                            std::string logMessage = instruction;
+                            
+                            // For ADD and VAR, show the result/value of X
+                            if (instruction.find("ADD") == 0 || instruction.find("VAR") == 0) {
+                                logMessage += " | X = " + std::to_string(p->getRegisterA());
+                            }
+                            
+                            p->writeLog(timestamp, core->getID(), logMessage);
                         }
-                        
-                        p->writeLog(timestamp, core->getID(), logMessage);
+                    } else if (p && core->isBusyWaiting()) {
+                        // Just busy-wait, don't execute instruction
+                        core->executeCycle(config.delayPerExec);
                     }
                     
                     // Check if process finished
@@ -375,10 +400,8 @@ private:
                 }
             }
             
-            // Delay between cycles (if delay is 0, executes as fast as possible)
-            if (config.delayPerExec > 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(config.delayPerExec));
-            }
+            // Fixed 100ms per CPU cycle
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 

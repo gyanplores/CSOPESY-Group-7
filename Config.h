@@ -21,7 +21,7 @@ struct SystemConfig {
     // Process Configuration
     int minInstructions;
     int maxInstructions;
-    int delayPerExec;          // Milliseconds delay per instruction
+    int delayPerExec;          // CPU cycles to wait before next instruction (0-2^32)
     
     // Constructor with defaults
     SystemConfig() 
@@ -31,23 +31,25 @@ struct SystemConfig {
           batchProcessFreq(3),
           minInstructions(100),
           maxInstructions(1000),
-          delayPerExec(50) {}
+          delayPerExec(0) {}  // Default: 0 (execute one instruction per cycle)
 
     // Display configuration
     void display() const {
         std::cout << "\n=== System Configuration ===\n";
         std::cout << "Number of CPUs: " << numCPUs << "\n";
+        std::cout << "CPU Cycle Time: 100 ms (fixed)\n";
         std::cout << "Scheduler Type: " << schedulerType << "\n";
         std::cout << "Quantum Cycles: " << quantumCycles << "\n";
         std::cout << "Batch Process Frequency: " << batchProcessFreq << "\n";
         std::cout << "Min Instructions: " << minInstructions << "\n";
         std::cout << "Max Instructions: " << maxInstructions << "\n";
+        std::cout << "Delay per Exec: " << delayPerExec << " cycles";
         if (delayPerExec == 0) {
-            std::cout << "Delay per Execution: 0 ms (1 instruction per CPU cycle)\n";
+            std::cout << " (1 instruction per cycle)";
         } else {
-            std::cout << "Delay per Execution: " << delayPerExec << " ms\n";
+            std::cout << " (busy-wait " << delayPerExec << " cycles per instruction)";
         }
-        std::cout << "============================\n\n";
+        std::cout << "\n============================\n\n";
     }
 
     // Validate configuration
