@@ -1,8 +1,8 @@
 #include <iostream>
-#include "mainMenu.h"
+#include "MainMenu.h"
 
 int main(){
-    mainMenu menu;
+    MainMenu menu;
     menu.setupCommands();
     menu.run();
         

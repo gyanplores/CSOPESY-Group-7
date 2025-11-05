@@ -7,7 +7,7 @@
 #include <functional>
 
 
-class commandHandler {
+class CommandHandler {
 private:
     // Map of command names to their handler functions
     std::map<std::string, std::function<void()>> commands;
@@ -15,7 +15,7 @@ private:
     bool systemInitialized;
 
 public:
-    commandHandler() : isRunning(true), systemInitialized(false) {}
+    CommandHandler() : isRunning(true), systemInitialized(false) {}
 
     // Register a new command with its handler function
     void registerCommand(const std::string& cmdName, std::function<void()> handler) {
