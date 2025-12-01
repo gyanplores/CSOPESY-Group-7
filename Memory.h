@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <cstddef>  // For SIZE_MAX
+#include <fstream>  // For backing store I/O
 
 /**
  * Memory Management System with Paging
@@ -101,6 +102,11 @@ private:
     size_t totalFree;
     int totalProcessesAllocated;
     int allocationFailures;
+
+    // Backing store + paging stats
+    std::string backingStorePath;
+    size_t pagesPagedIn;
+    size_t pagesPagedOut;
     
     // Thread safety
     mutable std::mutex memoryMutex;
@@ -112,10 +118,15 @@ private:
     int findFirstFitBlock(size_t size);
     int findBestFitBlock(size_t size);
     int findWorstFitBlock(size_t size);
+
+    // Backing store helpers
+    void initializeBackingStoreFile();
+    bool writeFrameToBackingStore(int frameNumber);
     
 public:
     MemoryManager(size_t maxMem, size_t memFrame, size_t minMem, size_t maxMemProc, 
-                  AllocationType type, AllocationStrategy strategy)
+                  AllocationType type, AllocationStrategy strategy,
+                  const std::string& backingPath = "csopesy-backing-store.txt")
         : maxMemorySize(maxMem),
           memPerFrame(memFrame),
           minMemPerProcess(minMem),
@@ -125,13 +136,19 @@ public:
           totalAllocated(0),
           totalFree(maxMem),
           totalProcessesAllocated(0),
-          allocationFailures(0) {
+          allocationFailures(0),
+          backingStorePath(backingPath),
+          pagesPagedIn(0),
+          pagesPagedOut(0) {
         
         if (allocationType == PAGING) {
             initializePaging();
         } else {
             initializeFlatMemory();
         }
+
+        // Initialize / truncate backing store file
+        initializeBackingStoreFile();
     }
     
     // Allocation methods
@@ -152,6 +169,7 @@ public:
     
     // Statistics
     double getMemoryUtilization() const {
+        if (maxMemorySize == 0) return 0.0;
         return (totalAllocated * 100.0) / maxMemorySize;
     }
     
@@ -189,6 +207,21 @@ void MemoryManager::initializePaging() {
     }
 }
 
+// Initialize backing store file (truncate and write header)
+void MemoryManager::initializeBackingStoreFile() {
+    std::ofstream ofs(backingStorePath, std::ios::trunc);
+    if (!ofs.is_open()) {
+        std::cerr << "WARNING: Could not initialize backing store file at '"
+                  << backingStorePath << "'.\n";
+        return;
+    }
+
+    ofs << "CSOPESY Backing Store\n";
+    ofs << "FrameSizeKB " << memPerFrame << "\n";
+    ofs << "MaxMemoryKB " << maxMemorySize << "\n\n";
+    ofs.close();
+}
+
 // Allocate memory for a process
 bool MemoryManager::allocateMemory(int processID, std::string processName, size_t memorySize) {
     std::lock_guard<std::mutex> lock(memoryMutex);
@@ -217,11 +250,11 @@ bool MemoryManager::allocateMemory(int processID, std::string processName, size_
         for (auto& frame : frames) {
             if (frame.isFree) {
                 freeFrames.push_back(frame.frameNumber);
-                if (freeFrames.size() >= pagesNeeded) break;
+                if ((int)freeFrames.size() >= pagesNeeded) break;
             }
         }
         
-        if (freeFrames.size() < pagesNeeded) {
+        if ((int)freeFrames.size() < pagesNeeded) {
             allocationFailures++;
             return false;  // Not enough frames
         }
@@ -292,6 +325,37 @@ bool MemoryManager::allocateMemory(int processID, std::string processName, size_
     return true;
 }
 
+// Write a frame's metadata to the backing store file
+bool MemoryManager::writeFrameToBackingStore(int frameNumber) {
+    if (allocationType != PAGING) return false;
+    if (frameNumber < 0 || frameNumber >= (int)frames.size()) return false;
+
+    const MemoryFrame& frame = frames[frameNumber];
+    if (frame.isFree) return false;  // Nothing to write
+
+    std::ofstream ofs(backingStorePath, std::ios::app);
+    if (!ofs.is_open()) {
+        std::cerr << "WARNING: Could not open backing store file '"
+                  << backingStorePath << "' for appending.\n";
+        return false;
+    }
+
+    std::time_t now = std::time(nullptr);
+    std::string ts = std::ctime(&now);
+    if (!ts.empty() && ts.back() == '\n') ts.pop_back();
+
+    ofs << "FRAME " << frame.frameNumber
+        << " PID " << frame.processID
+        << " NAME " << frame.processName
+        << " SIZEKB " << frame.size
+        << " TIME " << ts << "\n";
+
+    ofs.close();
+
+    pagesPagedOut++;  // Count as page-out
+    return true;
+}
+
 // Deallocate memory for a process
 bool MemoryManager::deallocateMemory(int processID) {
     std::lock_guard<std::mutex> lock(memoryMutex);
@@ -304,8 +368,11 @@ bool MemoryManager::deallocateMemory(int processID) {
     ProcessMemoryInfo& memInfo = it->second;
     
     if (allocationType == PAGING) {
-        // Free all frames
+        // Free all frames, but write to backing store first
         for (int frameNum : memInfo.frameNumbers) {
+            // Simulate paging out to backing store on process termination
+            writeFrameToBackingStore(frameNum);
+
             frames[frameNum].isFree = true;
             frames[frameNum].processID = -1;
             frames[frameNum].processName = "";
@@ -341,7 +408,7 @@ bool MemoryManager::deallocateMemory(int processID) {
 int MemoryManager::findFirstFitBlock(size_t size) {
     for (size_t i = 0; i < blocks.size(); i++) {
         if (blocks[i].isFree && blocks[i].size >= size) {
-            return i;
+            return (int)i;
         }
     }
     return -1;
@@ -354,7 +421,7 @@ int MemoryManager::findBestFitBlock(size_t size) {
     
     for (size_t i = 0; i < blocks.size(); i++) {
         if (blocks[i].isFree && blocks[i].size >= size && blocks[i].size < bestSize) {
-            bestIndex = i;
+            bestIndex = (int)i;
             bestSize = blocks[i].size;
         }
     }
@@ -369,7 +436,7 @@ int MemoryManager::findWorstFitBlock(size_t size) {
     
     for (size_t i = 0; i < blocks.size(); i++) {
         if (blocks[i].isFree && blocks[i].size >= size && blocks[i].size > worstSize) {
-            worstIndex = i;
+            worstIndex = (int)i;
             worstSize = blocks[i].size;
         }
     }
@@ -379,6 +446,8 @@ int MemoryManager::findWorstFitBlock(size_t size) {
 
 // Merge adjacent free blocks (for flat allocation)
 void MemoryManager::mergeFreeBlocks() {
+    if (blocks.empty()) return;
+
     for (size_t i = 0; i < blocks.size() - 1; ) {
         if (blocks[i].isFree && blocks[i + 1].isFree) {
             blocks[i].size += blocks[i + 1].size;
@@ -440,6 +509,9 @@ size_t MemoryManager::getExternalFragmentation() const {
         }
     }
     
+    if (totalFreeInBlocks == 0) return 0;
+    if (largestFreeBlock > totalFreeInBlocks) return 0;
+
     return totalFreeInBlocks - largestFreeBlock;
 }
 
@@ -453,7 +525,9 @@ size_t MemoryManager::getInternalFragmentation() const {
         const ProcessMemoryInfo& memInfo = pair.second;
         size_t allocated = memInfo.memoryAllocated;
         size_t required = memInfo.memoryRequired;
-        totalInternal += (allocated - required);
+        if (allocated > required) {
+            totalInternal += (allocated - required);
+        }
     }
     
     return totalInternal;
@@ -472,8 +546,8 @@ void MemoryManager::displayMemoryMap() const {
         std::cout << "Used Frames: " << getNumUsedFrames() << "\n";
         std::cout << "Free Frames: " << getNumFreeFrames() << "\n\n";
         
-        // Display frame allocation
-        for (size_t i = 0; i < frames.size() && i < 20; i++) {  // Show first 20 frames
+        // Display frame allocation (first 20)
+        for (size_t i = 0; i < frames.size() && i < 20; i++) {
             const auto& frame = frames[i];
             std::cout << "Frame " << std::setw(3) << frame.frameNumber << ": ";
             if (frame.isFree) {
@@ -525,6 +599,8 @@ void MemoryManager::displayVMStat() const {
         std::cout << "Pages Used: " << getNumUsedFrames() << "\n";
         std::cout << "Pages Free: " << getNumFreeFrames() << "\n";
         std::cout << "Internal Fragmentation: " << getInternalFragmentation() << " KB\n";
+        std::cout << "Pages Paged Out (to backing store): " << pagesPagedOut << "\n";
+        std::cout << "Pages Paged In (from backing store): " << pagesPagedIn << "\n";
     } else {
         std::cout << "Memory Blocks: " << blocks.size() << "\n";
         std::cout << "External Fragmentation: " << getExternalFragmentation() << " KB\n";
@@ -547,6 +623,8 @@ std::string MemoryManager::getMemorySnapshot() const {
     
     if (allocationType == PAGING) {
         oss << "Pages Used: " << getNumUsedFrames() << "/" << frames.size() << "\n";
+        oss << "Pages Paged Out: " << pagesPagedOut << "\n";
+        oss << "Pages Paged In: " << pagesPagedIn << "\n";
     }
     
     return oss.str();
