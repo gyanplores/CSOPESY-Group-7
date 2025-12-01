@@ -5,9 +5,13 @@
 #include <string>
 #include <cstdlib>
 #include <sstream>
+#include <fstream>
+#include <chrono>
+#include <ctime>
 #include "CommandHandler.h"
 #include "Config.h"
 #include "Scheduler.h"
+#include "Memory.h"
 
 class MainMenu {
 private:
@@ -15,7 +19,8 @@ private:
     bool clearOnCommand;
     Scheduler* scheduler;
     SystemConfig config;
-    
+    MemoryManager* memoryManager;   // NEW: global memory manager
+
     void displayBanner(){
         std::cout << "  _____   _____   ____   _____  ______  _____  __     __" << std::endl;
         std::cout << " / ____| / ____| / __ \\ |  __ \\|  ____|/ ____| \\ \\   / /" << std::endl;
@@ -25,7 +30,6 @@ private:
         std::cout << " \\_____| |_____/ \\____/ |_|    |______|_____/     |_|   " << std::endl;
     }
 
-    
     void clearScreen() {
         #ifdef _WIN32
             std::system("cls");
@@ -34,7 +38,6 @@ private:
         #endif
     }
 
-    
     std::string getUserInput() {
         std::string input;
         std::cout << "Enter command:  ";
@@ -42,7 +45,6 @@ private:
         return input;
     }
 
-    
     bool requiresInitialization(const std::string& cmd) {
         return (cmd == "screen-ls" || 
                 cmd == "scheduler-start" || 
@@ -52,12 +54,18 @@ private:
     }
 
 public:
-    MainMenu() : clearOnCommand(false), scheduler(nullptr) {}
-    
+    MainMenu() 
+        : clearOnCommand(false), 
+          scheduler(nullptr),
+          memoryManager(nullptr) {}   // NEW
+
     ~MainMenu() {
         if (scheduler) {
             scheduler->stop();
             delete scheduler;
+        }
+        if (memoryManager) {          // NEW
+            delete memoryManager;
         }
     }
 
@@ -155,9 +163,28 @@ private:
         }
         
         config.display();
-        
-        // Create scheduler
-        scheduler = new Scheduler(config);
+
+        // Create MemoryManager using config (PAGING mode for MCO2)  // NEW
+        if (memoryManager) {
+            delete memoryManager;
+            memoryManager = nullptr;
+        }
+        memoryManager = new MemoryManager(
+            config.maxOverallMem,
+            config.memPerFrame,
+            config.minMemPerProc,
+            config.maxMemPerProc,
+            MemoryManager::PAGING,
+            MemoryManager::FIRST_FIT
+        );
+
+        // Create scheduler and pass MemoryManager pointer            // CHANGED
+        if (scheduler) {
+            scheduler->stop();
+            delete scheduler;
+            scheduler = nullptr;
+        }
+        scheduler = new Scheduler(config, memoryManager);
         scheduler->start();
         
         cmdHandler.setSystemInitialized(true);
@@ -244,6 +271,12 @@ private:
                 }
             }
             reportFile << "\n";
+
+            // NEW: append memory statistics snapshot
+            if (memoryManager) {
+                reportFile << "--------------------------------------\n\n";
+                reportFile << memoryManager->getMemorySnapshot() << "\n";
+            }
             
             reportFile << "--------------------------------------\n";
             
@@ -423,6 +456,22 @@ private:
                     instructions,
                     "Manual"
                 );
+                
+                // NEW: choose a memory size in [minMemPerProc, maxMemPerProc]
+                size_t memSize = config.minMemPerProc;
+                if (config.maxMemPerProc > config.minMemPerProc) {
+                    memSize = config.minMemPerProc + 
+                        (rand() % (static_cast<int>(config.maxMemPerProc - config.minMemPerProc + 1)));
+                }
+
+                // NEW: allocate memory for this process
+                if (!memoryManager || 
+                    !memoryManager->allocateMemory(newProcess->getID(), newProcess->getName(), memSize)) {
+                    std::cout << "ERROR: Unable to allocate memory for process '" 
+                              << name << "'. Not enough memory.\n";
+                    delete newProcess;
+                    return true;
+                }
                 
                 // Generate instructions (VAR, PRINT, ADD pattern)
                 newProcess->generateInstructions(instructions);
