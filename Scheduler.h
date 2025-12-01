@@ -11,8 +11,10 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
+#include <fstream>
 #include "Process.h"
 #include "Config.h"
+#include "Memory.h"
 
 // CPU Core - Represents a single CPU core
 class CPUCore {
@@ -109,13 +111,17 @@ private:
     int currentCycle;
     std::chrono::steady_clock::time_point startTime;
 
+    // NEW: pointer to shared MemoryManager (non-owning)
+    MemoryManager* memoryManager;
+
 public:
-    Scheduler(const SystemConfig& cfg) 
+    Scheduler(const SystemConfig& cfg, MemoryManager* memMgr) 
         : config(cfg),
           isRunning(false),
           autoGenerateProcesses(false),
           totalProcessesCreated(0),
-          currentCycle(0) {
+          currentCycle(0),
+          memoryManager(memMgr) {
         
         // Create CPU cores
         for (int i = 0; i < config.numCPUs; i++) {
@@ -135,6 +141,7 @@ public:
             delete readyQueue.front();
             readyQueue.pop();
         }
+        // memoryManager is owned by MainMenu, do not delete here
     }
 
     // Add a process to the ready queue
@@ -177,9 +184,9 @@ public:
 
     // Get statistics
     int getTotalProcesses() const { return totalProcessesCreated; }
-    int getReadyQueueSize() const { return readyQueue.size(); }
-    int getRunningCount() const { return runningProcesses.size(); }
-    int getFinishedCount() const { return finishedProcesses.size(); }
+    int getReadyQueueSize() const { return (int)readyQueue.size(); }
+    int getRunningCount() const { return (int)runningProcesses.size(); }
+    int getFinishedCount() const { return (int)finishedProcesses.size(); }
     int getCurrentCycle() const { return currentCycle; }
 
     // Calculate CPU utilization
@@ -231,7 +238,7 @@ public:
                 std::cout << "  (None)\n";
             } else {
                 int showCount = std::min(10, (int)finishedProcesses.size());
-                for (int i = finishedProcesses.size() - showCount; i < finishedProcesses.size(); i++) {
+                for (int i = (int)finishedProcesses.size() - showCount; i < (int)finishedProcesses.size(); i++) {
                     std::cout << "  ";
                     finishedProcesses[i]->displayCompact();
                 }
@@ -464,6 +471,11 @@ private:
                     runningProcesses.end()
                 );
             }
+
+            // NEW: deallocate memory for this process
+            if (memoryManager) {
+                memoryManager->deallocateMemory(p->getID());
+            }
             
             core->releaseProcess();
         }
@@ -514,6 +526,21 @@ private:
                 instructions,
                 getCurrentTimeString()
             );
+
+            // NEW: allocate memory for auto-generated process
+            size_t memSize = config.minMemPerProc;
+            if (config.maxMemPerProc > config.minMemPerProc) {
+                memSize = config.minMemPerProc + 
+                    (rand() % (static_cast<int>(config.maxMemPerProc - config.minMemPerProc + 1)));
+            }
+
+            if (!memoryManager || 
+                !memoryManager->allocateMemory(newProcess->getID(), newProcess->getName(), memSize)) {
+                std::cout << "WARNING: Unable to allocate memory for auto process '"
+                          << name << "'. Skipping process creation.\n";
+                delete newProcess;
+                continue;
+            }
             
             // Generate instructions (VAR, PRINT, ADD pattern)
             newProcess->generateInstructions(instructions);
