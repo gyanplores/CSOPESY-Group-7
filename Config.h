@@ -21,6 +21,12 @@ struct SystemConfig {
     int maxInstructions;
     int delayPerExec;          // CPU cycles to wait before next instruction (0-2^32)
     
+    // Memory Configuration
+    size_t maxOverallMem;      // Total memory in KB
+    size_t memPerFrame;        // Memory per frame in KB (for paging)
+    size_t minMemPerProc;      // Minimum memory per process in KB
+    size_t maxMemPerProc;      // Maximum memory per process in KB
+    
     // Constructor with defaults
     SystemConfig() 
         : numCPUs(4),
@@ -29,28 +35,27 @@ struct SystemConfig {
           batchProcessFreq(3),
           minInstructions(100),
           maxInstructions(1000),
-          delayPerExec(0) {}  // Default: 0 (execute one instruction per cycle)
+          delayPerExec(0),      // Default: 0 (execute one instruction per cycle)
+          maxOverallMem(1024),  // 1024 KB = 1 MB
+          memPerFrame(16),      // 16 KB per frame
+          minMemPerProc(16),    // Min 16 KB per process
+          maxMemPerProc(128) {} // Max 128 KB per process
 
     // Display configuration
     void display() const {
         std::cout << "\n=== System Configuration ===\n";
         std::cout << "Number of CPUs: " << numCPUs << "\n";
-        //std::cout << "CPU Cycle Time: 100 ms (fixed)\n";
         std::cout << "Scheduler Type: " << schedulerType << "\n";
         std::cout << "Quantum Cycles: " << quantumCycles << "\n";
         std::cout << "Batch Process Frequency: " << batchProcessFreq << "\n";
         std::cout << "Min Instructions: " << minInstructions << "\n";
         std::cout << "Max Instructions: " << maxInstructions << "\n";
         std::cout << "Delay per Exec: " << delayPerExec << " cycles\n";
-        std::cout << "\n============================\n\n";
-        /*
-        if (delayPerExec == 0) {
-            std::cout << " (1 instruction per cycle)";
-        } else {
-            std::cout << " (busy-wait " << delayPerExec << " cycles per instruction)";
-        }
-        std::cout << "\n============================\n\n";
-        */
+        std::cout << "\n--- Memory Configuration ---\n";
+        std::cout << "Maximum Memory: " << maxOverallMem << " KB\n";
+        std::cout << "Memory per Frame: " << memPerFrame << " KB\n";
+        std::cout << "Memory per Process: " << minMemPerProc << " - " << maxMemPerProc << " KB\n";
+        std::cout << "============================\n\n";
     }
 
     // Validate configuration
@@ -85,31 +90,50 @@ struct SystemConfig {
             valid = false;
         }
         
+        // Validate memory configuration
+        if (maxOverallMem < 1) {
+            std::cerr << "ERROR: Invalid max overall memory (" << maxOverallMem << " KB)\n";
+            valid = false;
+        }
+        
+        if (memPerFrame < 1 || memPerFrame > maxOverallMem) {
+            std::cerr << "ERROR: Invalid memory per frame (" << memPerFrame << " KB)\n";
+            valid = false;
+        }
+        
+        if (minMemPerProc < 1 || maxMemPerProc < minMemPerProc) {
+            std::cerr << "ERROR: Invalid memory per process range\n";
+            std::cerr << "       Min: " << minMemPerProc << ", Max: " << maxMemPerProc << " KB\n";
+            valid = false;
+        }
+        
+        if (maxMemPerProc > maxOverallMem) {
+            std::cerr << "ERROR: Max memory per process (" << maxMemPerProc 
+                      << " KB) exceeds total memory (" << maxOverallMem << " KB)\n";
+            valid = false;
+        }
+        
         return valid;
     }
 };
 
-// ConfigLoader - Reads configuration from file
- 
+// ConfigLoader - Loads configuration from file
 class ConfigLoader {
 public:
     static SystemConfig loadFromFile(const std::string& filename) {
         SystemConfig config;
         std::ifstream file(filename);
-
+        
         if (!file.is_open()) {
-            std::cerr << "Warning: Could not open config file '" << filename 
-                      << "'. Using default values.\n";
+            std::cerr << "Warning: Could not open config file '" << filename << "'. Using defaults.\n";
             return config;
         }
-
+        
         std::string line;
         while (std::getline(file, line)) {
-            // Skip empty lines and comments
-            if (line.empty() || line[0] == '#') {
-                continue;
-            }
-
+            // Skip comments and empty lines
+            if (line.empty() || line[0] == '#') continue;
+            
             // Parse key-value pairs
             std::istringstream iss(line);
             std::string key, value;
@@ -118,7 +142,7 @@ public:
                 parseConfigValue(config, key, value);
             }
         }
-
+        
         file.close();
         return config;
     }
@@ -150,6 +174,19 @@ private:
         }
         else if (key == "delay-per-exec" || key == "delay_per_exec") {
             config.delayPerExec = std::stoi(value);
+        }
+        // Memory configuration
+        else if (key == "max-overall-mem" || key == "max_overall_mem") {
+            config.maxOverallMem = std::stoull(value);
+        }
+        else if (key == "mem-per-frame" || key == "mem_per_frame") {
+            config.memPerFrame = std::stoull(value);
+        }
+        else if (key == "min-mem-per-proc" || key == "min_mem_per_proc") {
+            config.minMemPerProc = std::stoull(value);
+        }
+        else if (key == "max-mem-per-proc" || key == "max_mem_per_proc") {
+            config.maxMemPerProc = std::stoull(value);
         }
     }
 };
