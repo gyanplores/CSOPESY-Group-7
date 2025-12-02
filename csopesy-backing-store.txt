@@ -1,0 +1,4 @@
+CSOPESY Backing Store
+FrameSizeKB 16
+MaxMemoryKB 1024
+

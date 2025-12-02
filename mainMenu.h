@@ -8,6 +8,7 @@
 #include <fstream>
 #include <chrono>
 #include <ctime>
+#include <set>
 #include "CommandHandler.h"
 #include "Config.h"
 #include "Scheduler.h"
@@ -111,6 +112,14 @@ public:
         cmdHandler.registerCommand("exit", [this]() {
             handleExit();
         });
+
+        cmdHandler.registerCommand("vmstat", [this]() {
+            if (memoryManager) {
+                memoryManager->displayVMStat();
+            } else {
+                std::cout << "Memory manager not initialized.\n";
+            }
+        });
     }
 
     // Main menu loop
@@ -122,6 +131,9 @@ public:
         std::cout << "Type 'initialize' to set up the system.\n\n";
 
         while (cmdHandler.shouldContinue()) {
+            if (scheduler && memoryManager) {
+                scheduler->deallocateFinishedProcesses(memoryManager);
+            }
             std::string userInput = getUserInput();
 
             // Skip empty input
@@ -184,7 +196,7 @@ private:
             delete scheduler;
             scheduler = nullptr;
         }
-        scheduler = new Scheduler(config, memoryManager);
+        scheduler = new Scheduler(config);
         scheduler->start();
         
         cmdHandler.setSystemInitialized(true);
@@ -464,7 +476,8 @@ private:
                         (rand() % (static_cast<int>(config.maxMemPerProc - config.minMemPerProc + 1)));
                 }
 
-                // NEW: allocate memory for this process
+                newProcess->setMemoryRequirement(memSize, config.memPerFrame);
+
                 if (!memoryManager || 
                     !memoryManager->allocateMemory(newProcess->getID(), newProcess->getName(), memSize)) {
                     std::cout << "ERROR: Unable to allocate memory for process '" 

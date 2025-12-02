@@ -8,6 +8,14 @@
 #include <ctime>
 #include <cstdlib>
 
+struct Page {
+    int pageNumber;     
+    bool isInMemory;
+    int frameNumber;
+     
+    Page(int num) : pageNumber(num), isInMemory(false), frameNumber(-1) {}
+};
+
 // Process - Represents a single process in the system
 class Process {
 public:
@@ -47,6 +55,11 @@ private:
     // Logging
     std::string logFilePath;
 
+    // Memory Management
+    std::vector<Page> pages;
+    int memoryRequired;
+    int numPages;
+
 public:
     // Constructor
     Process(std::string name, int id, int instructionCount, std::string arrival)
@@ -63,7 +76,9 @@ public:
           startTime(""),
           finishTime(""),
           assignedCore(-1),
-          logFilePath("") {
+          logFilePath(""),
+          memoryRequired(0),
+          numPages(0) {
         // Instructions will be generated separately
     }
 
@@ -205,6 +220,29 @@ public:
                   << " | Core: " << (assignedCore >= 0 ? std::to_string(assignedCore) : "N/A")
                   << " | " << instructionsExecuted << "/" << totalInstructions
                   << " | " << getStateString() << "\n";
+    }
+
+    // MEMORY MANAGEMENT METHODS
+
+    void setMemoryRequirement(int memKB, int frameSize) {
+        memoryRequired = memKB;
+        numPages = (memKB + frameSize - 1) / frameSize;  // Ceiling division
+        pages.clear();
+        for (int i = 0; i < numPages; i++) {
+            pages.push_back(Page(i));
+        }
+    }
+     
+    int getMemoryRequired() const { return memoryRequired; }
+    int getNumPages() const { return numPages; }
+    std::vector<Page>& getPages() { return pages; }
+    const std::vector<Page>& getPages() const { return pages; }
+    
+    bool hasPageInMemory(int pageNum) const {
+        if (pageNum >= 0 && pageNum < pages.size()) {
+            return pages[pageNum].isInMemory;
+        }
+        return false;
     }
 };
 

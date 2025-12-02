@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
+#include <set>
 #include "Process.h"
 #include "Config.h"
 
@@ -302,6 +303,26 @@ public:
     // Get active core count (for report)
     int countActiveCoresPublic() const {
         return countActiveCores();
+    }
+
+    // ========== MEMORY DEALLOCATION (NEW) ==========
+    
+    // This will be called from MainMenu to deallocate finished processes
+    void deallocateFinishedProcesses(MemoryManager* memMgr) {
+        if (!memMgr) return;
+        
+        std::lock_guard<std::mutex> lock(finishedMutex);
+        
+        // Track which processes we've deallocated
+        static std::set<int> deallocatedProcesses;
+        
+        for (auto p : finishedProcesses) {
+            // Only deallocate once per process
+            if (deallocatedProcesses.find(p->getID()) == deallocatedProcesses.end()) {
+                memMgr->deallocateMemory(p->getID());
+                deallocatedProcesses.insert(p->getID());
+            }
+        }
     }
 
 private:
