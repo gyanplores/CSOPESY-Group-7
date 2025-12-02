@@ -120,6 +120,14 @@ public:
                 std::cout << "Memory manager not initialized.\n";
             }
         });
+
+        cmdHandler.registerCommand("process-smi", [this]() {
+            if (scheduler && memoryManager) {
+                displayProcessSMI("");  // Empty string = show all processes
+            } else {
+                std::cout << "ERROR: System not initialized.\n";
+            }
+        });
     }
 
     // Main menu loop
@@ -196,7 +204,7 @@ private:
             delete scheduler;
             scheduler = nullptr;
         }
-        scheduler = new Scheduler(config);
+        scheduler = new Scheduler(config, memoryManager);  // Pass memoryManager
         scheduler->start();
         
         cmdHandler.setSystemInitialized(true);
@@ -345,6 +353,66 @@ private:
             return;
         }
         
+        // If no process name given, show memory overview for all processes
+        if (processName.empty()) {
+            if (!memoryManager) {
+                std::cout << "ERROR: Memory manager not initialized.\n";
+                return;
+            }
+            
+            std::cout << "\n========== PROCESS-SMI ==========\n\n";
+            
+            // Memory statistics
+            std::cout << "Memory Usage:\n";
+            std::cout << "  Total Memory: " << memoryManager->getMaxMemory() << " KB\n";
+            std::cout << "  Used Memory: " << memoryManager->getUsedMemory() << " KB\n";
+            std::cout << "  Free Memory: " << memoryManager->getFreeMemory() << " KB\n";
+            std::cout << "  Utilization: " << std::fixed << std::setprecision(2) 
+                      << memoryManager->getMemoryUtilization() << "%\n\n";
+            
+            // CPU statistics
+            std::cout << "CPU Usage:\n";
+            std::cout << "  Cores: " << config.numCPUs << "\n";
+            std::cout << "  Utilization: " << std::fixed << std::setprecision(2) 
+                      << scheduler->getCPUUtilization() << "%\n\n";
+            
+            // Running processes
+            std::cout << "Running Processes:\n";
+            auto running = scheduler->getRunningProcesses();
+            if (running.empty()) {
+                std::cout << "  (None)\n";
+            } else {
+                for (auto p : running) {
+                    std::cout << "  " << p->getName() 
+                              << " (PID " << p->getID() << ")"
+                              << " - Core " << p->getAssignedCore()
+                              << " - " << p->getMemoryRequired() << " KB"
+                              << " - " << p->getInstructionsExecuted() << "/" 
+                              << p->getTotalInstructions() << " instructions\n";
+                }
+            }
+            std::cout << "\n";
+            
+            // Finished processes (last 5)
+            std::cout << "Finished Processes (last 5):\n";
+            auto finished = scheduler->getFinishedProcesses();
+            if (finished.empty()) {
+                std::cout << "  (None)\n";
+            } else {
+                int start = std::max(0, (int)finished.size() - 5);
+                for (int i = start; i < (int)finished.size(); i++) {
+                    auto p = finished[i];
+                    std::cout << "  " << p->getName() 
+                              << " (PID " << p->getID() << ")"
+                              << " - " << p->getMemoryRequired() << " KB\n";
+                }
+            }
+            
+            std::cout << "\n==================================\n\n";
+            return;
+        }
+        
+        // Show specific process details
         Process* p = scheduler->findProcess(processName);
         if (!p) {
             std::cout << "Process '" << processName << "' not found.\n";
@@ -358,6 +426,13 @@ private:
         }
         std::cout << "\n";
         std::cout << "ID: " << p->getID() << "\n";
+        
+        // Display memory info
+        if (memoryManager && memoryManager->isProcessAllocated(p->getID())) {
+            auto memInfo = memoryManager->getProcessMemory(p->getID());
+            std::cout << "Memory: " << memInfo.memoryAllocated << " KB allocated\n";
+            std::cout << "Pages: " << memInfo.numPages << "\n";
+        }
         
         // Display current instruction line and total
         std::cout << "\nCurrent instruction line: " << p->getInstructionsExecuted() << "\n";
@@ -531,6 +606,78 @@ private:
                 
                 // Enter the process screen
                 enterProcessScreen(name);
+            } else {
+                std::cout << "ERROR: Scheduler not initialized.\n";
+            }
+            return true;
+        }
+        
+        // Handle "screen -c ProcessName "instructions""
+        if (input.find("screen -c ") == 0) {
+            size_t firstQuote = input.find('"');
+            size_t lastQuote = input.rfind('"');
+            
+            if (firstQuote == std::string::npos || lastQuote == std::string::npos || firstQuote == lastQuote) {
+                std::cout << "Usage: screen -c <processname> \"instruction1; instruction2; ...\"\n";
+                return true;
+            }
+            
+            std::string beforeQuote = input.substr(10, firstQuote - 10);
+            beforeQuote.erase(0, beforeQuote.find_first_not_of(" \t"));
+            beforeQuote.erase(beforeQuote.find_last_not_of(" \t") + 1);
+            
+            std::string processName = beforeQuote;
+            std::string instructionText = input.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+            
+            if (processName.empty()) {
+                std::cout << "Usage: screen -c <processname> \"instruction1; instruction2; ...\"\n";
+                return true;
+            }
+            
+            // Split instructions by semicolon
+            std::vector<std::string> instructions;
+            std::stringstream ss(instructionText);
+            std::string line;
+            while (std::getline(ss, line, ';')) {
+                line.erase(0, line.find_first_not_of(" \t"));
+                line.erase(line.find_last_not_of(" \t") + 1);
+                if (!line.empty()) {
+                    instructions.push_back(line);
+                }
+            }
+            
+            if (instructions.empty()) {
+                std::cout << "ERROR: No valid instructions provided.\n";
+                return true;
+            }
+            
+            if (scheduler) {
+                int memSize = 1024;  // Default size for custom processes
+                
+                Process* newProcess = new Process(
+                    processName,
+                    scheduler->getTotalProcesses(),
+                    instructions.size(),
+                    "Manual",
+                    instructions  // Custom instructions constructor
+                );
+                
+                newProcess->setMemoryRequirement(memSize, config.memPerFrame);
+                
+                if (!memoryManager || 
+                    !memoryManager->allocateMemory(newProcess->getID(), newProcess->getName(), memSize)) {
+                    std::cout << "ERROR: Unable to allocate memory for process '" << processName << "'.\n";
+                    delete newProcess;
+                    return true;
+                }
+                
+                scheduler->initializeProcessLogPublic(newProcess);
+                scheduler->addProcess(newProcess);
+                
+                std::cout << "Created custom process '" << processName << "' with " 
+                          << instructions.size() << " instructions.\n";
+                
+                enterProcessScreen(processName);
             } else {
                 std::cout << "ERROR: Scheduler not initialized.\n";
             }

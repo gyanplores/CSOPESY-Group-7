@@ -91,6 +91,9 @@ private:
     // Configuration
     SystemConfig config;
     
+    // Memory Manager
+    MemoryManager* memoryManager;  // ADD THIS
+    
     // CPU Cores
     std::vector<CPUCore*> cpuCores;
     
@@ -112,8 +115,9 @@ private:
     std::chrono::steady_clock::time_point startTime;
 
 public:
-    Scheduler(const SystemConfig& cfg) 
+    Scheduler(const SystemConfig& cfg, MemoryManager* memMgr = nullptr) 
         : config(cfg),
+          memoryManager(memMgr),  // ADD THIS
           isRunning(false),
           autoGenerateProcesses(false),
           totalProcessesCreated(0),
@@ -528,6 +532,11 @@ private:
             int instructions = config.minInstructions + 
                 (rand() % (config.maxInstructions - config.minInstructions + 1));
             
+            // Generate random memory requirement
+            int minMemKB = config.minMemPerProc;
+            int maxMemKB = config.maxMemPerProc;
+            int memSize = minMemKB + (rand() % (maxMemKB - minMemKB + 1));
+            
             // Create new process
             std::string name = "Process_" + std::to_string(totalProcessesCreated);
             Process* newProcess = new Process(
@@ -536,6 +545,18 @@ private:
                 instructions,
                 getCurrentTimeString()
             );
+            
+            // Set memory requirement
+            newProcess->setMemoryRequirement(memSize, config.memPerFrame);
+            
+            // Try to allocate memory if MemoryManager is available
+            if (memoryManager) {
+                if (!memoryManager->allocateMemory(newProcess->getID(), newProcess->getName(), memSize)) {
+                    // Memory allocation failed - skip this process
+                    delete newProcess;
+                    continue;
+                }
+            }
             
             // Generate instructions (VAR, PRINT, ADD pattern)
             newProcess->generateInstructions(instructions);

@@ -89,6 +89,7 @@ private:
     size_t memPerFrame;             // Memory per frame in KB (for paging)
     size_t minMemPerProcess;        // Minimum memory per process in KB
     size_t maxMemPerProcess;        // Maximum memory per process in KB
+    
     AllocationType allocationType;
     AllocationStrategy allocationStrategy;
     
@@ -163,6 +164,11 @@ public:
     size_t getNumUsedFrames() const;
     int getNumPages() const { return frames.size(); }
     
+    // Getters for process-smi
+    size_t getMaxMemory() const { return maxMemorySize; }
+    size_t getTotalAllocated() const { return totalAllocated; }
+    size_t getTotalFree() const { return totalFree; }
+
     // Process-specific queries
     bool isProcessAllocated(int processID) const;
     ProcessMemoryInfo getProcessMemory(int processID) const;
@@ -584,29 +590,82 @@ void MemoryManager::displayMemoryMap() const {
 
 // Display vmstat
 void MemoryManager::displayVMStat() const {
-    std::cout << "\n========== MEMORY STATISTICS ==========\n";
+    std::lock_guard<std::mutex> lock(memoryMutex);
+    
+    std::cout << "\n========================================\n";
+    std::cout << "VM STATISTICS\n";
+    std::cout << "========================================\n\n";
+    
+    // Memory Overview
+    std::cout << "Memory Overview:\n";
     std::cout << "Total Memory: " << maxMemorySize << " KB\n";
     std::cout << "Used Memory: " << totalAllocated << " KB\n";
     std::cout << "Free Memory: " << totalFree << " KB\n";
-    std::cout << "Memory Utilization: " << std::fixed << std::setprecision(2) 
+    std::cout << "Utilization: " << std::fixed << std::setprecision(2) 
               << getMemoryUtilization() << "%\n\n";
     
+    // Process Statistics
+    std::cout << "Process Statistics:\n";
     std::cout << "Active Processes: " << totalProcessesAllocated << "\n";
     std::cout << "Allocation Failures: " << allocationFailures << "\n\n";
     
+    // Paging Information
     if (allocationType == PAGING) {
-        std::cout << "Pages (Frames): " << frames.size() << "\n";
-        std::cout << "Pages Used: " << getNumUsedFrames() << "\n";
-        std::cout << "Pages Free: " << getNumFreeFrames() << "\n";
-        std::cout << "Internal Fragmentation: " << getInternalFragmentation() << " KB\n";
-        std::cout << "Pages Paged Out (to backing store): " << pagesPagedOut << "\n";
-        std::cout << "Pages Paged In (from backing store): " << pagesPagedIn << "\n";
+        std::cout << "Paging Information:\n";
+        std::cout << "Total Frames: " << frames.size() << "\n";
+        std::cout << "Used Frames: " << getNumUsedFrames() << "\n";
+        std::cout << "Free Frames: " << getNumFreeFrames() << "\n";
+        std::cout << "Frame Size: " << memPerFrame << " KB\n";
+        std::cout << "Pages Paged In: " << pagesPagedIn << "\n";
+        std::cout << "Pages Paged Out: " << pagesPagedOut << "\n";
+        std::cout << "Internal Fragmentation: " << std::fixed << std::setprecision(2)
+                  << getInternalFragmentation() << " KB\n\n";
+        
+        // Process Memory Allocations
+        if (totalProcessesAllocated > 0) {
+            std::cout << "Memory Allocations:\n";
+            std::cout << "PID\tProcess Name\t\tFrames\tMemory (KB)\n";
+            std::cout << "---\t------------\t\t------\t-----------\n";
+            
+            // Count frames per process
+            std::map<int, int> frameCount;
+            std::map<int, std::string> processNames;
+            std::map<int, size_t> processMemory;
+            
+            for (const auto& frame : frames) {
+                if (!frame.isFree) {
+                    frameCount[frame.processID]++;
+                    processNames[frame.processID] = frame.processName;
+                    processMemory[frame.processID] += frame.size;
+                }
+            }
+            
+            for (const auto& entry : frameCount) {
+                int pid = entry.first;
+                int count = entry.second;
+                std::string name = processNames[pid];
+                size_t memKB = processMemory[pid];
+                
+                // Truncate long names
+                if (name.length() > 20) {
+                    name = name.substr(0, 17) + "...";
+                }
+                
+                std::cout << pid << "\t" << std::left << std::setw(20) << name << std::right
+                          << "\t" << count << "\t" << memKB << "\n";
+            }
+            std::cout << "\n";
+        } else {
+            std::cout << "No processes currently allocated in memory.\n\n";
+        }
     } else {
+        // Flat memory allocation
         std::cout << "Memory Blocks: " << blocks.size() << "\n";
-        std::cout << "External Fragmentation: " << getExternalFragmentation() << " KB\n";
+        std::cout << "External Fragmentation: " << std::fixed << std::setprecision(2)
+                  << getExternalFragmentation() << " KB\n\n";
     }
     
-    std::cout << "=======================================\n\n";
+    std::cout << "========================================\n\n";
 }
 
 // Get memory snapshot for report
