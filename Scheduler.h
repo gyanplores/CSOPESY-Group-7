@@ -14,6 +14,7 @@
 #include <set>
 #include "Process.h"
 #include "Config.h"
+#include "Memory.h"
 
 // CPU Core - Represents a single CPU core
 class CPUCore {

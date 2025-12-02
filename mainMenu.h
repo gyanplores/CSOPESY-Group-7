@@ -446,14 +446,55 @@ private:
         
         // Handle "screen -s ProcessName" - create process and enter its screen
         if (input.find("screen -s ") == 0) {
-            std::string name = input.substr(10);
+            std::string args = input.substr(10);
             
             // Trim whitespace
-            while (!name.empty() && name[0] == ' ') name = name.substr(1);
-            while (!name.empty() && name[name.length()-1] == ' ') name = name.substr(0, name.length()-1);
+            while (!args.empty() && args[0] == ' ') args = args.substr(1);
+            while (!args.empty() && args[args.length()-1] == ' ') args = args.substr(0, args.length()-1);
             
-            if (name.empty()) {
-                std::cout << "Usage: screen -s <processname>\n";
+            if (args.empty()) {
+                std::cout << "Usage: screen -s <processname> <memory_size>\n";
+                std::cout << "Memory size must be power of 2 in range [64, 65536] bytes\n";
+                return true;
+            }
+            
+            // Parse process name and memory size
+            std::string name;
+            size_t memSize = 0;
+            
+            size_t spacePos = args.find(' ');
+            if (spacePos == std::string::npos) {
+                // Missing memory parameter
+                std::cout << "Usage: screen -s <processname> <memory_size>\n";
+                std::cout << "Memory size must be power of 2 in range [64, 65536] bytes\n";
+                return true;
+            }
+            
+            // Extract name and memory string
+            name = args.substr(0, spacePos);
+            std::string memStr = args.substr(spacePos + 1);
+            
+            // Trim memory string
+            while (!memStr.empty() && memStr[0] == ' ') memStr = memStr.substr(1);
+            
+            // Parse memory size
+            try {
+                memSize = std::stoi(memStr);
+            } catch (...) {
+                std::cout << "Invalid memory allocation. Memory size must be a number.\n";
+                return true;
+            }
+            
+            // Validate: Must be power of 2
+            bool isPowerOf2 = (memSize > 0) && ((memSize & (memSize - 1)) == 0);
+            if (!isPowerOf2) {
+                std::cout << "Invalid memory allocation. Memory size must be a power of 2.\n";
+                return true;
+            }
+            
+            // Validate: Must be in range [64, 65536] = [2^6, 2^16]
+            if (memSize < 64 || memSize > 65536) {
+                std::cout << "Invalid memory allocation. Memory size must be between 64 and 65536 bytes.\n";
                 return true;
             }
             
@@ -469,15 +510,9 @@ private:
                     "Manual"
                 );
                 
-                // NEW: choose a memory size in [minMemPerProc, maxMemPerProc]
-                size_t memSize = config.minMemPerProc;
-                if (config.maxMemPerProc > config.minMemPerProc) {
-                    memSize = config.minMemPerProc + 
-                        (rand() % (static_cast<int>(config.maxMemPerProc - config.minMemPerProc + 1)));
-                }
-
+                // Use the specified memory size (validated above)
                 newProcess->setMemoryRequirement(memSize, config.memPerFrame);
-
+        
                 if (!memoryManager || 
                     !memoryManager->allocateMemory(newProcess->getID(), newProcess->getName(), memSize)) {
                     std::cout << "ERROR: Unable to allocate memory for process '" 
